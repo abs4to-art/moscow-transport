@@ -1,9 +1,8 @@
 import os
 import sys
 import json
-import time
-import requests
 import vk_api
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from data import DATA, find_section
 
 TOKEN = os.getenv("VK_TOKEN")
@@ -16,7 +15,7 @@ vk = vk_session.get_api()
 
 group_info = vk.groups.getById()[0]
 GROUP_ID = group_info["id"]
-print(f"Группа: {group_info['screen_name']} (ID: {GROUP_ID})", flush=True)
+print(f"Группа ID: {GROUP_ID}", flush=True)
 
 def make_keyboard(section):
     items = DATA[section]["buttons"]
@@ -36,52 +35,25 @@ def send(peer_id, text, section):
         random_id=0
     )
 
-# Ручной LongPoll
-server = vk.groups.getLongPollServer(group_id=GROUP_ID)
-print(f"LongPoll сервер получен: {server['server']}", flush=True)
+print("Подключаюсь к LongPoll...", flush=True)
+lp = VkBotLongPoll(vk_session, GROUP_ID)
+print("LongPoll подключён", flush=True)
 
-while True:
+for event in lp.listen():
+    print(f"Событие: {event.type}", flush=True)
     try:
-        srv = server["server"]
-        if not srv.startswith("http"):
-            srv = f"https://{srv}"
-        response = requests.post(srv,
-            data={
-                "act": "a_check",
-                "key": server["key"],
-                "ts": server["ts"],
-                "wait": 25
-            },
-            timeout=30
-        ).json()
-
-        if "ts" in response:
-            server["ts"] = response["ts"]
-
-        if "updates" not in response or not response["updates"]:
+        obj = event.object if hasattr(event, 'object') else event.obj
+        msg = obj.get("message", obj)
+        if not isinstance(msg, dict):
+            print(f"Неизвестный формат: {msg}", flush=True)
             continue
 
-        for update in response["updates"]:
-            print(f"Обновление: type={update.get('type')}", flush=True)
+        text = msg.get("text", "").strip()
+        peer_id = msg.get("peer_id") or msg.get("from_id")
+        print(f"Текст: {text} от {peer_id}", flush=True)
 
-            if update.get("type") == "message_new":
-                msg = update.get("object", {}).get("message", {})
-                text = msg.get("text", "").strip()
-                peer_id = msg.get("peer_id") or msg.get("from_id")
-                print(f"Сообщение от {peer_id}: {text}", flush=True)
-
-                section = find_section(text)
-                if section:
-                    send(peer_id, DATA[section]["text"], section)
-                else:
-                    send(peer_id, DATA["start"]["text"], "start")
-
-                print(f"Ответ отправлен {peer_id}", flush=True)
-
+        section = find_section(text)
+        send(peer_id, DATA[section]["text"] if section else DATA["start"]["text"], section or "start")
+        print("Ответ отправлен", flush=True)
     except Exception as e:
         print(f"Ошибка: {e}", flush=True)
-        time.sleep(3)
-        try:
-            server = vk.groups.getLongPollServer(group_id=GROUP_ID)
-        except:
-            pass
