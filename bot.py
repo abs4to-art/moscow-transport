@@ -42,8 +42,10 @@ print(f"LongPoll сервер получен: {server['server']}", flush=True)
 
 while True:
     try:
-        response = requests.post(
-            f"https://{server['server']}",
+        srv = server["server"]
+        if not srv.startswith("http"):
+            srv = f"https://{srv}"
+        response = requests.post(srv,
             data={
                 "act": "a_check",
                 "key": server["key"],
