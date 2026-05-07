@@ -1,8 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: moscow-transport-bot
     env: docker
     dockerfilePath: ./Dockerfile
     envVars:
       - key: VK_TOKEN
+        sync: false
+      - key: CONFIRM_CODE
         sync: false
