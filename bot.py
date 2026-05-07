@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import vk_api
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from data import DATA, find_section
@@ -15,7 +16,8 @@ vk = vk_session.get_api()
 
 group_info = vk.groups.getById()[0]
 GROUP_ID = group_info["id"]
-print(f"Группа ID: {GROUP_ID}", flush=True)
+GROUP_NAME = group_info["screen_name"]
+print(f"Группа: @{GROUP_NAME} (ID: {GROUP_ID})", flush=True)
 
 def make_keyboard(section):
     items = DATA[section]["buttons"]
@@ -35,25 +37,30 @@ def send(peer_id, text, section):
         random_id=0
     )
 
-print("Подключаюсь к LongPoll...", flush=True)
-lp = VkBotLongPoll(vk_session, GROUP_ID)
-print("LongPoll подключён", flush=True)
+try:
+    longpoll = VkBotLongPoll(vk_session, GROUP_ID)
+    print("LongPoll подключён успешно", flush=True)
+except Exception as e:
+    print(f"Ошибка LongPoll: {e}", flush=True)
+    sys.exit(1)
 
-for event in lp.listen():
-    print(f"Событие: {event.type}", flush=True)
-    try:
-        obj = event.object if hasattr(event, 'object') else event.obj
-        msg = obj.get("message", obj)
-        if not isinstance(msg, dict):
-            print(f"Неизвестный формат: {msg}", flush=True)
-            continue
+print("Бот работает. Напишите сообщение в группу ВК.", flush=True)
 
-        text = msg.get("text", "").strip()
-        peer_id = msg.get("peer_id") or msg.get("from_id")
-        print(f"Текст: {text} от {peer_id}", flush=True)
+for event in longpoll.listen():
+    if event.type == VkBotEventType.MESSAGE_NEW:
+        try:
+            msg = event.obj.get("message", event.obj)
+            text = msg.get("text", "").strip()
+            peer_id = msg.get("peer_id", msg.get("from_id"))
+            print(f"[{peer_id}] {text}", flush=True)
 
-        section = find_section(text)
-        send(peer_id, DATA[section]["text"] if section else DATA["start"]["text"], section or "start")
-        print("Ответ отправлен", flush=True)
-    except Exception as e:
-        print(f"Ошибка: {e}", flush=True)
+            section = find_section(text)
+            if not section:
+                section = "start"
+            send(peer_id, DATA[section]["text"], section)
+        except Exception as e:
+            print(f"Ошибка обработки: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"Пропуск: {event.type}", flush=True)
