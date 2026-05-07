@@ -1,2 +1,2 @@
-vk-api>=11.0,<12.0
+vk-api>=11.0
 requests>=2.28
