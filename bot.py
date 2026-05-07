@@ -39,15 +39,23 @@ def send(peer_id, text, section):
 
 print("Бот запущен, ожидание сообщений...", flush=True)
 for event in longpoll.listen():
-    if event.type != VkBotEventType.MESSAGE_NEW:
-        continue
+    print(f"Получено событие: type={event.type}", flush=True)
 
-    msg = event.obj.message
-    text = msg.get("text", "").strip()
-    peer_id = msg["peer_id"]
+    if event.type == VkBotEventType.MESSAGE_NEW:
+        try:
+            msg = event.obj.message
+            text = msg.get("text", "").strip()
+            peer_id = msg["from_id"]
+            print(f"Сообщение от {peer_id}: {text}", flush=True)
 
-    section = find_section(text)
-    if section:
-        send(peer_id, DATA[section]["text"], section)
+            section = find_section(text)
+            if section:
+                send(peer_id, DATA[section]["text"], section)
+            else:
+                send(peer_id, DATA["start"]["text"], "start")
+
+            print(f"Ответ отправлен {peer_id}", flush=True)
+        except Exception as e:
+            print(f"Ошибка: {e}", flush=True)
     else:
-        send(peer_id, DATA["start"]["text"], "start")
+        print(f"Игнорируем событие: {event.type}", flush=True)
