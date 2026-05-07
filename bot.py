@@ -1,48 +1,42 @@
 import os
-from vkbottle import Bot, Message
-from vkbottle.bot import Message
-from vkbottle import Keyboard, KeyboardButtonColor, Text, Callback
+import vk_api
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from data import DATA
 
 TOKEN = os.getenv("VK_TOKEN")
-bot = Bot(TOKEN)
 
-def get_keyboard(section="start"):
+vk_session = vk_api.VkApi(token=TOKEN)
+vk = vk_session.get_api()
+longpoll = VkBotLongPoll(vk_session, vk.group_id)
+
+def make_keyboard(section="start"):
     items = DATA[section]["buttons"]
-    keyboard = Keyboard()
-    for i, label in enumerate(items):
-        keyboard.add(Text(label))
-        if i < len(items) - 1:
-            keyboard.row()
-    return keyboard
+    buttons = []
+    for label in items:
+        buttons.append([{"action": {"type": "text", "label": label}, "color": "primary"}])
+    import json
+    return json.dumps({"inline": False, "buttons": buttons}, ensure_ascii=False)
 
-@bot.on.message(text="Начать")
-@bot.on.message(text="Старт")
-@bot.on.message(payload={"cmd": "start"})
-async def start_handler(message: Message):
-    data = DATA["start"]
-    keyboard = get_keyboard("start")
-    await message.answer(data["text"], keyboard=keyboard)
+def send_msg(peer_id, text, section="start"):
+    vk.messages.send(
+        peer_id=peer_id,
+        message=text,
+        keyboard=make_keyboard(section),
+        random_id=0
+    )
 
-@bot.on.message(text=DATA["start"]["buttons"])
-async def menu_handler(message: Message):
-    section = message.text
-    if section in DATA:
-        data = DATA[section]
-        keyboard = get_keyboard(section)
-        await message.answer(data["text"], keyboard=keyboard)
+print("Бот запущен...")
+for event in longpoll.listen():
+    if event.type == VkBotEventType.MESSAGE_NEW:
+        msg = event.obj.message
+        text = msg.get("text", "").strip()
+        peer_id = msg["peer_id"]
 
-@bot.on.message(text="Назад")
-async def back_handler(message: Message):
-    data = DATA["start"]
-    keyboard = get_keyboard("start")
-    await message.answer(data["text"], keyboard=keyboard)
-
-@bot.on.message()
-async def any_message(message: Message):
-    data = DATA["start"]
-    keyboard = get_keyboard("start")
-    await message.answer("Пожалуйста, воспользуйтесь кнопками меню.", keyboard=keyboard)
-
-if __name__ == "__main__":
-    bot.run_forever()
+        if text in ("Начать", "Старт", ""):
+            send_msg(peer_id, DATA["start"]["text"], "start")
+        elif text == "Назад":
+            send_msg(peer_id, DATA["start"]["text"], "start")
+        elif text in DATA:
+            send_msg(peer_id, DATA[text]["text"], text)
+        else:
+            send_msg(peer_id, DATA["start"]["text"], "start")
