@@ -1,8 +1,9 @@
 import os
 import sys
 import json
+import time
+import requests
 import vk_api
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from data import DATA, find_section
 
 TOKEN = os.getenv("VK_TOKEN")
@@ -16,8 +17,6 @@ vk = vk_session.get_api()
 group_info = vk.groups.getById()[0]
 GROUP_ID = group_info["id"]
 print(f"Группа: {group_info['screen_name']} (ID: {GROUP_ID})", flush=True)
-
-longpoll = VkBotLongPoll(vk_session, group_id=GROUP_ID)
 
 def make_keyboard(section):
     items = DATA[section]["buttons"]
@@ -37,25 +36,50 @@ def send(peer_id, text, section):
         random_id=0
     )
 
-print("Бот запущен, ожидание сообщений...", flush=True)
-for event in longpoll.listen():
-    print(f"Получено событие: type={event.type}", flush=True)
+# Ручной LongPoll
+server = vk.groups.getLongPollServer(group_id=GROUP_ID)
+print(f"LongPoll сервер получен: {server['server']}", flush=True)
 
-    if event.type == VkBotEventType.MESSAGE_NEW:
+while True:
+    try:
+        response = requests.post(
+            f"https://{server['server']}",
+            data={
+                "act": "a_check",
+                "key": server["key"],
+                "ts": server["ts"],
+                "wait": 25
+            },
+            timeout=30
+        ).json()
+
+        if "ts" in response:
+            server["ts"] = response["ts"]
+
+        if "updates" not in response or not response["updates"]:
+            continue
+
+        for update in response["updates"]:
+            print(f"Обновление: type={update.get('type')}", flush=True)
+
+            if update.get("type") == "message_new":
+                msg = update.get("object", {}).get("message", {})
+                text = msg.get("text", "").strip()
+                peer_id = msg.get("peer_id") or msg.get("from_id")
+                print(f"Сообщение от {peer_id}: {text}", flush=True)
+
+                section = find_section(text)
+                if section:
+                    send(peer_id, DATA[section]["text"], section)
+                else:
+                    send(peer_id, DATA["start"]["text"], "start")
+
+                print(f"Ответ отправлен {peer_id}", flush=True)
+
+    except Exception as e:
+        print(f"Ошибка: {e}", flush=True)
+        time.sleep(3)
         try:
-            msg = event.obj.message
-            text = msg.get("text", "").strip()
-            peer_id = msg["from_id"]
-            print(f"Сообщение от {peer_id}: {text}", flush=True)
-
-            section = find_section(text)
-            if section:
-                send(peer_id, DATA[section]["text"], section)
-            else:
-                send(peer_id, DATA["start"]["text"], "start")
-
-            print(f"Ответ отправлен {peer_id}", flush=True)
-        except Exception as e:
-            print(f"Ошибка: {e}", flush=True)
-    else:
-        print(f"Игнорируем событие: {event.type}", flush=True)
+            server = vk.groups.getLongPollServer(group_id=GROUP_ID)
+        except:
+            pass
